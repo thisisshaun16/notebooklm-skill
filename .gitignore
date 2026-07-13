@@ -36,6 +36,9 @@ notebooks.json
 state.json
 cookies.json
 
+# Personal debug scripts (may contain hardcoded personal notebook URLs)
+scripts/debug_dom.py
+
 # IDE
 .vscode/
 .idea/

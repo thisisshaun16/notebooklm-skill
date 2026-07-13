@@ -9,6 +9,21 @@ import sys
 import subprocess
 from pathlib import Path
 
+# Windows consoles default to cp1252/GBK, which can't encode the emoji used
+# in this skill's output. Force UTF-8 so prints don't crash before any work happens.
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except AttributeError:
+    pass
+
+
+def _child_env():
+    """Env for child processes: force UTF-8 I/O so emoji prints don't crash on Windows."""
+    env = os.environ.copy()
+    env['PYTHONIOENCODING'] = 'utf-8'
+    return env
+
 
 def get_venv_python():
     """Get the virtual environment Python executable"""
@@ -35,7 +50,7 @@ def ensure_venv():
         print("   This may take a minute...")
 
         # Run setup with system Python
-        result = subprocess.run([sys.executable, str(setup_script)])
+        result = subprocess.run([sys.executable, str(setup_script)], env=_child_env())
         if result.returncode != 0:
             print("❌ Failed to set up environment")
             sys.exit(1)
@@ -88,7 +103,7 @@ def main():
 
     # Run the script
     try:
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd, env=_child_env())
         sys.exit(result.returncode)
     except KeyboardInterrupt:
         print("\n⚠️ Interrupted by user")

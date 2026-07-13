@@ -10,6 +10,12 @@ import subprocess
 import venv
 from pathlib import Path
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except AttributeError:
+    pass
+
 
 class SkillEnvironment:
     """Manages skill-specific virtual environment"""
@@ -50,9 +56,11 @@ class SkillEnvironment:
         if self.requirements_file.exists():
             print("📦 Installing dependencies...")
             try:
-                # Upgrade pip first
+                # Upgrade pip via "python -m pip", not pip.exe directly: on Windows,
+                # pip.exe can't overwrite itself while running (file lock), which
+                # aborts setup even though the upgrade would otherwise succeed.
                 subprocess.run(
-                    [str(self.venv_pip), "install", "--upgrade", "pip"],
+                    [str(self.venv_python), "-m", "pip", "install", "--upgrade", "pip"],
                     check=True,
                     capture_output=True,
                     text=True
@@ -60,7 +68,7 @@ class SkillEnvironment:
 
                 # Install requirements
                 result = subprocess.run(
-                    [str(self.venv_pip), "install", "-r", str(self.requirements_file)],
+                    [str(self.venv_python), "-m", "pip", "install", "-r", str(self.requirements_file)],
                     check=True,
                     capture_output=True,
                     text=True

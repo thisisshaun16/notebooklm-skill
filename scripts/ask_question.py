@@ -102,28 +102,48 @@ def ask_notebooklm(question: str, notebook_url: str, headless: bool = True) -> s
 
         # Type question (human-like, fast)
         print("  ⏳ Typing question...")
-        
+
         # Use primary selector for typing
         input_selector = QUERY_INPUT_SELECTORS[0]
         StealthUtils.human_type(page, input_selector, question)
 
-        # Submit
+        # Verify the text actually landed in the textarea (use
+        # input_value(), NOT inner_text() -- textareas don't expose their
+        # value as DOM text content).
+        typed_value = page.query_selector(input_selector).input_value()
+        if typed_value.strip() != question.strip():
+            page.fill(input_selector, question)
+
+        # Submit via the actual submit button (aria-label '提交') rather
+        # than Enter -- Enter was found to sometimes clear the textarea
+        # without truly sending the message to NotebookLM's backend.
         print("  📤 Submitting...")
-        page.keyboard.press("Enter")
+        submit_button = page.query_selector("button[aria-label='提交']")
+        if submit_button and submit_button.is_visible() and submit_button.is_enabled():
+            submit_button.click()
+        else:
+            page.keyboard.press("Enter")
 
-        # Small pause
-        StealthUtils.random_delay(500, 1500)
-
-        # Wait for response (MCP approach: poll for stable text)
+        # Wait for response, paired to OUR question specifically.
+        #
+        # NotebookLM's chat pane renders both user messages
+        # (.from-user-container) and bot replies (.to-user-container) as
+        # siblings in one message list, and the persistent browser profile
+        # retains prior chat history that can still be settling into the
+        # DOM after navigation. Simply watching "the last .to-user-container
+        # element go stable" is unreliable -- it can grab a stale answer to
+        # an earlier question. Instead: find OUR most recent question bubble
+        # by matching its text, then only accept a .to-user-container that
+        # comes AFTER it in document order.
         print("  ⏳ Waiting for answer...")
 
+        probe = question[:60].replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
         answer = None
         stable_count = 0
         last_text = None
         deadline = time.time() + 120  # 2 minutes timeout
 
         while time.time() < deadline:
-            # Check if NotebookLM is still thinking (most reliable indicator)
             try:
                 thinking_element = page.query_selector('div.thinking-message')
                 if thinking_element and thinking_element.is_visible():
@@ -132,29 +152,42 @@ def ask_notebooklm(question: str, notebook_url: str, headless: bool = True) -> s
             except:
                 pass
 
-            # Try to find response with MCP selectors
-            for selector in RESPONSE_SELECTORS:
-                try:
-                    elements = page.query_selector_all(selector)
-                    if elements:
-                        # Get last (newest) response
-                        latest = elements[-1]
-                        text = latest.inner_text().strip()
+            try:
+                text = page.evaluate(f"""
+                    () => {{
+                        const nodes = Array.from(document.querySelectorAll(
+                            '.from-user-container, .to-user-container'
+                        ));
+                        let lastQuestionIdx = -1;
+                        for (let i = nodes.length - 1; i >= 0; i--) {{
+                            if (nodes[i].classList.contains('from-user-container')
+                                && nodes[i].innerText.includes('{probe}')) {{
+                                lastQuestionIdx = i;
+                                break;
+                            }}
+                        }}
+                        if (lastQuestionIdx === -1) return null;
+                        for (let i = lastQuestionIdx + 1; i < nodes.length; i++) {{
+                            if (nodes[i].classList.contains('to-user-container')) {{
+                                const msg = nodes[i].querySelector('.message-text-content');
+                                return msg ? msg.innerText.trim() : nodes[i].innerText.trim();
+                            }}
+                        }}
+                        return null;
+                    }}
+                """)
+            except:
+                text = None
 
-                        if text:
-                            if text == last_text:
-                                stable_count += 1
-                                if stable_count >= 3:  # Stable for 3 polls
-                                    answer = text
-                                    break
-                            else:
-                                stable_count = 0
-                                last_text = text
-                except:
-                    continue
-
-            if answer:
-                break
+            if text:
+                if text == last_text:
+                    stable_count += 1
+                    if stable_count >= 3:  # Stable for 3 polls
+                        answer = text
+                        break
+                else:
+                    stable_count = 0
+                    last_text = text
 
             time.sleep(1)
 
