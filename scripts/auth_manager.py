@@ -27,6 +27,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import BROWSER_STATE_DIR, STATE_FILE, AUTH_INFO_FILE, DATA_DIR
 from browser_utils import BrowserFactory
 
+# Google migrated notebooklm.google.com -> notebook.google.com; accept both
+NOTEBOOK_HOST_RE = re.compile(r"^https://notebook(lm)?\.google\.com(/|$)")
+
+
+def _is_notebook_url(url: str) -> bool:
+    """True when the page landed on NotebookLM rather than the login flow."""
+    return bool(NOTEBOOK_HOST_RE.match(url)) and "accounts.google.com" not in url
+
 
 class AuthManager:
     """
@@ -114,7 +122,8 @@ class AuthManager:
             page.goto("https://notebooklm.google.com", wait_until="domcontentloaded")
 
             # Check if already authenticated
-            if "notebooklm.google.com" in page.url and "accounts.google.com" not in page.url:
+            # Google migrated notebooklm.google.com -> notebook.google.com; accept both
+            if _is_notebook_url(page.url):
                 print("  ✅ Already authenticated!")
                 self._save_browser_state(context)
                 return True
@@ -260,7 +269,7 @@ class AuthManager:
             page.goto("https://notebooklm.google.com", wait_until="domcontentloaded", timeout=30000)
 
             # Check if we can access NotebookLM
-            if "notebooklm.google.com" in page.url and "accounts.google.com" not in page.url:
+            if _is_notebook_url(page.url):
                 print("  ✅ Authentication is valid")
                 return True
             else:
