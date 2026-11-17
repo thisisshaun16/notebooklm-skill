@@ -142,7 +142,7 @@ def ask_notebooklm(question: str, notebook_url: str, headless: bool = True) -> s
         answer = None
         stable_count = 0
         last_text = None
-        deadline = time.time() + 120  # 2 minutes timeout
+        deadline = time.time() + 300  # 5 minutes timeout (large notebooks answer slowly)
 
         while time.time() < deadline:
             try:
@@ -180,10 +180,16 @@ def ask_notebooklm(question: str, notebook_url: str, headless: bool = True) -> s
             except:
                 text = None
 
+            # NotebookLM shows a status header ("Searched your sources ... expand_more")
+            # before the answer streams in. It sits unchanged for several seconds on
+            # large notebooks, so drop it instead of mistaking it for the answer.
+            if text and 'expand_more' in text[:200]:
+                text = re.sub(r'^.*?expand_more\s*', '', text, count=1, flags=re.S).strip() or None
+
             if text:
                 if text == last_text:
                     stable_count += 1
-                    if stable_count >= 3:  # Stable for 3 polls
+                    if stable_count >= 5:  # Stable for 5 polls
                         answer = text
                         break
                 else:

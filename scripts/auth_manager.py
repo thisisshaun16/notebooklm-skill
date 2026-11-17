@@ -121,6 +121,10 @@ class AuthManager:
             page = context.new_page()
             page.goto("https://notebooklm.google.com", wait_until="domcontentloaded")
 
+            # Give Google's sign-in redirect time to happen before judging the URL;
+            # otherwise a signed-out visit is misread as "already authenticated".
+            page.wait_for_timeout(8000)
+
             # Check if already authenticated
             # Google migrated notebooklm.google.com -> notebook.google.com; accept both
             if _is_notebook_url(page.url):
@@ -135,7 +139,7 @@ class AuthManager:
             try:
                 # Wait for URL to change to NotebookLM (regex ensures it's the actual domain, not a parameter)
                 timeout_ms = int(timeout_minutes * 60 * 1000)
-                page.wait_for_url(re.compile(r"^https://notebooklm\.google\.com/"), timeout=timeout_ms)
+                page.wait_for_url(re.compile(r"^https://notebook(lm)?\.google\.com/"), timeout=timeout_ms)
 
                 print(f"  ✅ Login successful!")
 
